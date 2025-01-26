@@ -1,115 +1,131 @@
 import './App.css';
-import { DragWrapper } from './DragWrapper';
+import {useDrag} from "./useDrag";
+import {useEffect, useMemo, useRef, useState} from "react";
 
-// const useSize = (ref) => {
-//   const [width, setWidth] = useState(null);
-//   const [height, setHeight] = useState(null);
+const useLocalStorageFactory = (id) => {
+    return useMemo(() => {
+        return {
+            setLocalStorageDrag: (value) => {
+                localStorage.setItem(id, JSON.stringify(value));
+            },
+            getLocalStorageDrag: () => {
+                return JSON.parse(localStorage.getItem(id));
+            },
+            hasStorage: Boolean(JSON.parse(localStorage.getItem(id))),
+        }
+    }, [id])
+};
 
-//   useEffect(() => {
-//     const { width, height } = ref.current.getBoundingClientRect();
-//     setWidth(width);
-//     setHeight(height);
-//   }, []);
 
-//   return { width, height };
-// };
+const getMargins = (el) => {
+    if (!el) {
+        return {bottom: 0, left: 0, right: 0, top: 0};
+    }
+    const css = getComputedStyle(el);
+    const marginLeftRaf = parseInt(css.marginLeft);
+    const marginTopRaf = parseInt(css.marginTop);
+    const marginRightRaf = parseInt(css.marginRight);
+    const marginBottomRaf = parseInt(css.marginBottom);
 
-// const usePosition = (ref) => {
-//   const [top, setTop] = useState(null);
-//   const [left, setLeft] = useState(null);
+    return {
+        bottom: isNaN(marginBottomRaf) ? 0 : marginBottomRaf,
+        left: isNaN(marginLeftRaf) ? 0 : marginLeftRaf,
+        right: isNaN(marginRightRaf) ? 0 : marginRightRaf,
+        top: isNaN(marginTopRaf) ? 0 : marginTopRaf,
+    };
+};
 
-//   useEffect(() => {
-//     const { top, left } = ref.current.getBoundingClientRect();
-//     setTop(top);
-//     setLeft(left);
-//   }, []);
 
-//   return { top, left };
-// };
+function App() {
 
-// const pos = (c, rect) => {
-//   const y = Math.min(Math.max(-rect.top, c.y), window.innerHeight - rect.height - rect.top);
-//   const x = Math.min(Math.max(-rect.left, c.x), window.innerWidth - rect.width - rect.left);
+    const {setLocalStorageDrag, getLocalStorageDrag, hasStorage} = useLocalStorageFactory('dragTest');
+    const ref = useRef();
 
-//   return {
-//     top: rect.top,
-//     left: rect.left,
-//     transform: `translate(${x}px, ${y}px)`,
-//   };
-// };
+    const [position, setPosition] = useState(() => {
+        if (hasStorage) {
+            return getLocalStorageDrag();
+        }
+        return {x: 0, y: 0};
+    });
+    const [diff, setDiff] = useState({x: 0, y: 0});
 
-// function App() {
-//   const divRef = useRef(null);
-//   const size = useSize(divRef);
-//   const position = usePosition(divRef);
-//   const [handlers, c] = useDrag();
-//   const rect = {
-//     ...size,
-//     top: position.top ?? 400,
-//     left: position.left ?? 300,
-//   };
-//   return (
-//     <div className="App">
-//       <div
-//         ref={divRef}
-//         style={{
-//           background: 'red',
-//           position: 'fixed',
-//           ...pos(c, rect)
-//         }}
-//         {...handlers}>
-//         Hello world <br /> Hello world!!!!!!!!!!!!!
-//       </div>
-//     </div>
-//   );
-// }
+    const [pointerEvents, isMoving] = useDrag({
+        onDragStart: () => {
+            document.body.classList.add('grabbing');
+        },
+        onDragMove: (x, y) => {
+            setDiff({x: x, y: y});
+        },
+        onDragEnd: (x, y) => {
+            const {width, height} = ref.current?.getBoundingClientRect();
+            const margins = getMargins(ref.current);
+            const nextX = Math.max(Math.min(position.x + x, document.body.clientWidth - width - margins.left - margins.right), 0);
+            const nextY = Math.max(Math.min(position.y + y, window.innerHeight - height - margins.top - margins.bottom), 0);
+            setPosition({
+                    x: nextX,
+                    y: nextY,
+                }
+            );
+            setLocalStorageDrag({x: nextX, y: nextY});
+            document.body.classList.remove('grabbing');
+            setDiff({x: 0, y: 0});
+        }
+    });
 
-// const useDrag = () => {
+    const zalupa = useMemo(()=> {
+        return {
+            top: window.innerHeight,
+            left: window.innerWidth,
+        }
+    }, [] )
 
-//   const [x, setX] = useState(0);
-//   const [y, setY] = useState(0);
+    useEffect(() => {
+        const fn = (ev) => {
+            // console.log(ev);
+        }
 
-//   const shiftX = useRef(0);
-//   const shiftY = useRef(0);
-//   const prevX = useRef(0);
-//   const prevY = useRef(0);
+        window.addEventListener('resize', fn);
 
-//   const onMouseMove = useCallback((e) => {
-//     setX(prevX.current + e.clientX - shiftX.current);
-//     setY(prevY.current + e.clientY - shiftY.current);
-//   }, []);
+        return () => {
+            window.removeEventListener('resize', fn);
+        }
+    })
 
-//   const onMouseUp = useCallback((e) => {
-//     prevX.current += e.clientX - shiftX.current;
-//     prevY.current += e.clientY - shiftY.current;
-//     document.documentElement.removeEventListener('mousemove', onMouseMove);
-//     document.documentElement.removeEventListener('mouseup', onMouseUp);
-//   }, []
-//   )
+    // console.log(zalupa)
 
-//   const onMouseDown = (e) => {
-//     shiftX.current = e.clientX;
-//     shiftY.current = e.clientY;
-//     document.documentElement.addEventListener('mousemove', onMouseMove);
-//     document.documentElement.addEventListener('mouseup', onMouseUp);
-//   }
-//   return [{ onMouseDown }, { x, y }]
-// }
+    const cY = (zalupa.top / window.innerHeight);
+    const cX = ( zalupa.left /window.innerWidth);
+    const cXDiff = zalupa.left - window.innerWidth;
+    const cYDiff =   zalupa.top - window.innerHeight;
 
-const App = () => {
-  return (
-    <div className="App">
-      <DragWrapper leftInit={300} topInit={400}>
-        <div
-          style={{
-            background: 'red',
+    console.log({ cXDiff, cYDiff })
+    console.log(zalupa)
+    console.log({
+        top: window.innerHeight,
+        left: window.innerWidth,
+    })
 
-          }}>
-          Hello world <br /> Hello world!!!!!!!!!!!!! <br /> Hello world
+    const x = position.x + diff.x;
+    const k = Math.round(100 + cXDiff/window.innerWidth * 100);
+
+    return (
+        <div className="App">
+            <div ref={ref} {...pointerEvents} style={{
+                transition: isMoving ? 'none' : 'all .1s ease',
+                position: "fixed",
+                cursor: "grab",
+                // top:((position.y + diff.y) / zalupa.top * cY) * 100 + '%',
+                left: x / window.innerWidth * 110 + '%',
+                width: 200,
+                height: 200,
+                padding: 15,
+                background: 'blanchedalmond',
+                margin: 20,
+            }}>
+            </div>
+
         </div>
-      </DragWrapper>
-    </div>
-  )
+    );
 }
 
 export default App;
