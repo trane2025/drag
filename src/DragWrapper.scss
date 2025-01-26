@@ -1,0 +1,8 @@
+.drag-wrapper {
+  cursor: grab;
+  user-select: none;
+}
+
+.grabbing * {
+  cursor: grabbing;
+}
