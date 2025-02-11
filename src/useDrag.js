@@ -1,41 +1,69 @@
-import {useCallback, useState, useRef} from "react";
+import * as React from "react";
 
-export const useDrag = ({onDragStart, onDragMove, onDragEnd}) => {
+export const Status = {
+    idle:    2 << 0,
+    started: 2 << 1,
+    moved:   2 << 2,
+    ended:   2 << 3,
+};
 
-    const startPosition = useRef({x: 0, y: 0});
-    const [isMoving, setIsMoving] = useState(false);
-    const onPointerDown = useCallback((ev) => {
+export const isActive = Status.started | Status.moved;
+
+export const useDiff = () => {
+    const [diffX, setDiffX] = React.useState(0);
+    const [diffY, setDiffY] = React.useState(0);
+    const [status, setStatus] = React.useState(Status.idle);
+    const startPosition = React.useRef({ x: 0, y: 0 });
+
+    const onPointerDown = React.useCallback((ev) => {
+        if(ev.button !== 0) return;
         ev.preventDefault();
-
         ev.currentTarget.setPointerCapture(ev.pointerId);
-        onDragStart?.();
-        setIsMoving(true);
+        setStatus(Status.started);
         startPosition.current.x = ev.clientX;
         startPosition.current.y = ev.clientY;
-    }, [onDragStart]);
-
-    const onDragMoveRef = useRef(onDragMove);
-    onDragMoveRef.current = onDragMove;
-    const onDragEndRef = useRef(onDragEnd);
-    onDragEndRef.current = onDragEnd;
-
-    const onPointerMove = useCallback((ev) => {
-        ev.preventDefault();
-        onDragMoveRef.current(ev.clientX - startPosition.current.x, ev.clientY - startPosition.current.y);
     }, []);
 
-    const onPointerUp = useCallback((ev) => {
+    const onPointerMove = React.useCallback((ev) => {
+        ev.preventDefault();
+        setStatus(Status.moved);
+        setDiffX(ev.clientX - startPosition.current.x);
+        setDiffY(ev.clientY - startPosition.current.y);
+    }, []);
+
+    const onPointerUp = React.useCallback((ev) => {
         ev.preventDefault();
         ev.currentTarget.releasePointerCapture(ev.pointerId);
-        onDragEndRef.current(ev.clientX - startPosition.current.x, ev.clientY - startPosition.current.y);
+        setStatus(Status.ended);
         startPosition.current.x = 0;
         startPosition.current.y = 0;
-        setIsMoving(false);
     }, []);
 
-    return [{
+    React.useLayoutEffect(() => {
+        if(status === Status.ended){
+            setStatus(Status.idle);
+            setDiffX(0);
+            setDiffY(0);
+        }
+    }, [status]);
+
+    const returns = {
+        x: diffX,
+        y: diffY,
+        status,
+    };
+
+    const handlers = {
         onPointerDown,
-        onPointerMove: isMoving ? onPointerMove : undefined,
+        onPointerMove: status & isActive ? onPointerMove : undefined,
         onPointerUp,
-    }, isMoving]
+    };
+
+    return [returns, handlers];
 }
+
+export const useEffect = (d, cases) => {
+    React.useEffect(() => {
+        cases?.[d.status]?.();
+    });
+};

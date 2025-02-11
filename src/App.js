@@ -1,23 +1,10 @@
+import * as React from 'react';
+import * as Drag from './useDrag';
+import { useSize, useSizeStable } from './measures-hook-utils';
 import './App.css';
-import {useDrag} from "./useDrag";
-import {useEffect, useMemo, useRef, useState} from "react";
 
-const useLocalStorageFactory = (id) => {
-    return useMemo(() => {
-        return {
-            setLocalStorageDrag: (value) => {
-                localStorage.setItem(id, JSON.stringify(value));
-            },
-            getLocalStorageDrag: () => {
-                return JSON.parse(localStorage.getItem(id));
-            },
-            hasStorage: Boolean(JSON.parse(localStorage.getItem(id))),
-        }
-    }, [id])
-};
-
-
-const getMargins = (el) => {
+const getMargins = (ref) => {
+    const el = ref.current;
     if (!el) {
         return {bottom: 0, left: 0, right: 0, top: 0};
     }
@@ -35,87 +22,105 @@ const getMargins = (el) => {
     };
 };
 
+const mergeToXY = (rect) => {
+    return {
+        x: rect.left + rect.right,
+        y: rect.top + rect.bottom,
+    };
+};
 
-function App() {
+const clamp = (from, to) => (value) => Math.max(from, Math.min(value, to));
 
-    const {setLocalStorageDrag, getLocalStorageDrag, hasStorage} = useLocalStorageFactory('dragTest');
-    const ref = useRef();
+const getWindowSize = () => {
+    const html = document.documentElement;
+    return {
+        width: html.clientWidth,
+        height: html.clientHeight,
+    };
+};
 
-    const [position, setPosition] = useState(() => {
-        if (hasStorage) {
-            return getLocalStorageDrag();
-        }
-        return {x: 0, y: 0};
+const getSizeFromRef = (ref) => () => {
+    const rect = ref.current?.getBoundingClientRect();
+    return {
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+    };
+};
+
+const getBounds = (containerPlot, targetSize) => {
+    return {
+        x: clamp(containerPlot.offset.x, containerPlot.size.x - targetSize.x),
+        y: clamp(containerPlot.offset.y, containerPlot.size.y - targetSize.y),
+    };
+};
+
+const useFullSize = (ref) => {
+    const size = useSize(getSizeFromRef(ref));
+    const margins = mergeToXY(getMargins(ref));
+
+    return {
+        x: size.x + margins.x,
+        y: size.y + margins.y,
+    };
+};
+
+const zeroPoint = { x: 0, y: 0 };
+
+const useWindowDiff = (updated) => {
+    const size = {
+        window: useSize(getWindowSize, updated),
+        windowStable: useSizeStable(getWindowSize, updated),
+    };
+
+    return {
+        x: size.window.x - size.windowStable.x,
+        y: size.window.y - size.windowStable.y,
+    };
+};
+
+// -------------------------------------------------------------------------------------
+// Main
+// -------------------------------------------------------------------------------------
+
+const initPosition = () => ({ x: 100, y: 200 });
+
+const App = () => {
+    const [position, commitPosition] = React.useState(initPosition);
+    const [drag, dragHandlers] = Drag.useDiff();
+
+    const windowPlot = {
+        offset: zeroPoint,
+        size: useSize(getWindowSize),
+    };
+
+    const ref = React.useRef(null);
+    const targetSize = useFullSize(ref);
+
+    const bounds = getBounds(windowPlot, targetSize);
+    
+    const isNotDragged = drag.status === Drag.Status.idle;
+    const windowDiff = useWindowDiff(isNotDragged);
+
+    const getFinalPosition = (p) => ({
+        x: bounds.x(p.x + drag.x + Math.max(-p.x, windowDiff.x)),
+        y: bounds.y(p.y + drag.y + Math.max(-p.y, windowDiff.y)),
     });
-    const [diff, setDiff] = useState({x: 0, y: 0});
 
-    const [pointerEvents, isMoving] = useDrag({
-        onDragStart: () => {
-            document.body.classList.add('grabbing');
+    Drag.useEffect(drag, {
+        [Drag.Status.ended]: () => {
+            commitPosition(getFinalPosition);
         },
-        onDragMove: (x, y) => {
-            setDiff({x: x, y: y});
-        },
-        onDragEnd: (x, y) => {
-            const {width, height} = ref.current?.getBoundingClientRect();
-            const margins = getMargins(ref.current);
-            const nextX = Math.max(Math.min(position.x + x, document.body.clientWidth - width - margins.left - margins.right), 0);
-            const nextY = Math.max(Math.min(position.y + y, window.innerHeight - height - margins.top - margins.bottom), 0);
-            setPosition({
-                    x: nextX,
-                    y: nextY,
-                }
-            );
-            setLocalStorageDrag({x: nextX, y: nextY});
-            document.body.classList.remove('grabbing');
-            setDiff({x: 0, y: 0});
-        }
     });
 
-    const zalupa = useMemo(()=> {
-        return {
-            top: window.innerHeight,
-            left: window.innerWidth,
-        }
-    }, [] )
-
-    useEffect(() => {
-        const fn = (ev) => {
-            // console.log(ev);
-        }
-
-        window.addEventListener('resize', fn);
-
-        return () => {
-            window.removeEventListener('resize', fn);
-        }
-    })
-
-    // console.log(zalupa)
-
-    const cY = (zalupa.top / window.innerHeight);
-    const cX = ( zalupa.left /window.innerWidth);
-    const cXDiff = zalupa.left - window.innerWidth;
-    const cYDiff =   zalupa.top - window.innerHeight;
-
-    console.log({ cXDiff, cYDiff })
-    console.log(zalupa)
-    console.log({
-        top: window.innerHeight,
-        left: window.innerWidth,
-    })
-
-    const x = position.x + diff.x;
-    const k = Math.round(100 + cXDiff/window.innerWidth * 100);
+    const offset = getFinalPosition(position);
 
     return (
-        <div className="App">
-            <div ref={ref} {...pointerEvents} style={{
-                transition: isMoving ? 'none' : 'all .1s ease',
-                position: "fixed",
-                cursor: "grab",
-                // top:((position.y + diff.y) / zalupa.top * cY) * 100 + '%',
-                left: x / window.innerWidth * 110 + '%',
+        <div className='App'>
+            <div ref={ref} {...dragHandlers} style={{
+                position: 'fixed',
+                cursor: 'grab',
+                top: offset.y,
+                left: offset.x,
                 width: 200,
                 height: 200,
                 padding: 15,
@@ -123,7 +128,6 @@ function App() {
                 margin: 20,
             }}>
             </div>
-
         </div>
     );
 }
